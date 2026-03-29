@@ -35,20 +35,20 @@ class TestParseMinGap:
 
 class TestDispatch:
     @patch("media_backup.repl.render_split")
-    def test_set_registers_path(self, mock_render, tmp_path):
+    def test_set_registers_path(self, _mock_render, tmp_path):
         session = Session()
         _dispatch(f"set SSD {tmp_path}", session)
         assert session.get("SSD") == tmp_path
 
     @patch("media_backup.repl.render_split")
-    def test_unset_removes_path(self, mock_render):
+    def test_unset_removes_path(self, _mock_render):
         session = Session()
         session.set("laptop1", "/some/path")
         _dispatch("unset laptop1", session)
         assert "laptop1" not in session.names
 
     @patch("media_backup.repl.render_split")
-    def test_help_does_not_crash(self, mock_render):
+    def test_help_does_not_crash(self, _mock_render):
         session = Session()
         result = _dispatch("help", session)
         assert result is True
@@ -64,7 +64,7 @@ class TestDispatch:
         assert result is False
 
     @patch("media_backup.repl.render_split")
-    def test_unknown_command(self, mock_render):
+    def test_unknown_command(self, _mock_render):
         session = Session()
         result = _dispatch("foobar", session)
         assert result is True
