@@ -25,7 +25,8 @@ class Confidence(Enum):
     EXACT = "exact"
     LIKELY = "likely"
     AMBIGUOUS = "ambiguous"
-    MISSING = "missing"
+    MISMATCH = "mismatch"   # same name candidate exists, but metadata disagrees
+    MISSING = "missing"     # no candidate with this name at all
 
 
 @dataclass
@@ -163,22 +164,14 @@ def _metadata_match(src: MediaFile, tgt: MediaFile) -> Confidence:
         return Confidence.LIKELY
     if matches > 0:
         return Confidence.AMBIGUOUS
-    return Confidence.MISSING
+    return Confidence.MISMATCH
 
 
-def coverage_check(
-    source_path: Path,
-    target_path: Path,
-    source_label: str = "source",
-    target_label: str = "target",
-    cache: Optional[ScanCache] = None,
+def _match_files_against_index(
+    source_files: List[MediaFile],
+    target_index: Dict[str, List[MediaFile]],
 ) -> CoverageResult:
-    """Check whether every file in *source_path* exists somewhere in *target_path*."""
-    _scan = cache.get if cache else scan_directory
-    source_files = _scan(source_path, label=source_label)
-    target_files = _scan(target_path, label=target_label)
-    target_index = build_flat_index(target_files)
-
+    """Match each source file against a flat target index by name, size, and metadata."""
     result = CoverageResult()
 
     for src in source_files:
@@ -201,10 +194,28 @@ def coverage_check(
             if conf == Confidence.AMBIGUOUS:
                 result.ambiguous.append(MatchResult(src, best, conf))
                 continue
+            result.missing.append(MatchResult(src, best, Confidence.MISMATCH))
+            continue
 
         result.missing.append(MatchResult(src))
 
     return result
+
+
+def coverage_check(
+    source_path: Path,
+    target_path: Path,
+    source_label: str = "source",
+    target_label: str = "target",
+    cache: Optional[ScanCache] = None,
+) -> CoverageResult:
+    """Check whether every file in *source_path* exists somewhere in *target_path*."""
+    _scan = cache.get if cache else scan_directory
+    source_files = _scan(source_path, label=source_label)
+    target_files = _scan(target_path, label=target_label)
+    target_index = build_flat_index(target_files)
+
+    return _match_files_against_index(source_files, target_index)
 
 
 # ---------------------------------------------------------------------------
@@ -222,36 +233,12 @@ def safe_to_clear(
     _scan = cache.get if cache else scan_directory
     laptop_files = _scan(laptop_path, label=laptop_label)
 
-    ssd_files = _scan(ssd_path, label="SSD")
-    ssd_index = build_flat_index(ssd_files)
-
-    hdd_files = _scan(hdd_path, label="HDD")
-    hdd_index = build_flat_index(hdd_files)
-
-    def _check(index: Dict[str, List[MediaFile]]) -> CoverageResult:
-        cov = CoverageResult()
-        for src in laptop_files:
-            key = src.name.lower()
-            candidates = index.get(key, [])
-            exact = [c for c in candidates if c.size == src.size]
-            if exact:
-                cov.matched.append(MatchResult(src, exact[0], Confidence.EXACT))
-            elif candidates:
-                best = candidates[0]
-                conf = _metadata_match(src, best)
-                if conf == Confidence.LIKELY:
-                    cov.matched.append(MatchResult(src, best, conf))
-                elif conf == Confidence.AMBIGUOUS:
-                    cov.ambiguous.append(MatchResult(src, best, conf))
-                else:
-                    cov.missing.append(MatchResult(src))
-            else:
-                cov.missing.append(MatchResult(src))
-        return cov
+    ssd_index = build_flat_index(_scan(ssd_path, label="SSD"))
+    hdd_index = build_flat_index(_scan(hdd_path, label="HDD"))
 
     return SafeToClearResult(
-        ssd_coverage=_check(ssd_index),
-        hdd_coverage=_check(hdd_index),
+        ssd_coverage=_match_files_against_index(laptop_files, ssd_index),
+        hdd_coverage=_match_files_against_index(laptop_files, hdd_index),
     )
 
 

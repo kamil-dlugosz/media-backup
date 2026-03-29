@@ -82,7 +82,10 @@ path names (e.g. `phone1`, `SSD`) or raw filesystem paths.
 **`safe-to-clear <dir>`** — *Requires SSD and HDD*
 
 Check if a laptop directory can be safely deleted because all its files exist on
-both external drives. Only reports `SAFE TO DELETE` at 100% coverage on both.
+both external drives. Reports `SAFE TO DELETE` when every file is matched,
+`PROBABLY SAFE` when all files are accounted for but some matches are ambiguous
+(same name, different size, no metadata to confirm), or `NOT SAFE` when files
+are missing from at least one drive.
 
 **`duplicates <dir>`**
 
@@ -102,7 +105,9 @@ metadata as a tiebreaker:
 - **Images**: EXIF `DateTimeOriginal`, width, height (via Pillow)
 - **Videos**: resolution, framerate (via pymediainfo, if installed)
 
-Match confidence is reported as: `exact`, `likely`, `ambiguous`, or `missing`.
+Match confidence is reported as: `exact` (name + size match), `likely` (name matches,
+metadata agrees), `ambiguous` (name matches, insufficient metadata), `mismatch`
+(name matches but metadata disagrees), or `missing` (no candidate with that name).
 
 Supported media extensions: `.jpg` `.jpeg` `.png` `.heic` `.heif` `.mp4` `.mov`
 `.avi` `.mkv` `.raw` `.dng` `.cr2` `.nef`

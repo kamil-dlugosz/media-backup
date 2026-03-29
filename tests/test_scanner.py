@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from media_backup.scanner import build_flat_index, scan_directory
+from media_backup.scanner import ScanCache, build_flat_index, scan_directory
 
 
 def _make(tmp_path: Path, name: str, size: int = 100) -> Path:
@@ -74,3 +74,51 @@ class TestBuildFlatIndex:
         assert "alpha.jpg" in index
         assert "beta.png" in index
         assert len(index["alpha.jpg"]) == 1
+
+
+class TestScanCache:
+    def test_caches_results(self, tmp_path):
+        _make(tmp_path, "pic.jpg", 100)
+        cache = ScanCache()
+
+        first = cache.get(tmp_path)
+        second = cache.get(tmp_path)
+        assert first == second
+
+    def test_returns_shallow_copy(self, tmp_path):
+        _make(tmp_path, "pic.jpg", 100)
+        cache = ScanCache()
+
+        first = cache.get(tmp_path)
+        first.clear()
+        second = cache.get(tmp_path)
+        assert len(second) == 1
+
+    def test_invalidate_all(self, tmp_path):
+        _make(tmp_path, "pic.jpg", 100)
+        cache = ScanCache()
+        cache.get(tmp_path)
+
+        cache.invalidate()
+
+        _make(tmp_path, "pic2.jpg", 200)
+        refreshed = cache.get(tmp_path)
+        assert len(refreshed) == 2
+
+    def test_invalidate_specific_root(self, tmp_path):
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        _make(dir_a, "one.jpg", 100)
+        _make(dir_b, "two.jpg", 200)
+
+        cache = ScanCache()
+        cache.get(dir_a)
+        cache.get(dir_b)
+
+        _make(dir_a, "three.jpg", 300)
+        cache.invalidate(dir_a)
+
+        assert len(cache.get(dir_a)) == 2
+        assert len(cache.get(dir_b)) == 1

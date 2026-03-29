@@ -2,14 +2,18 @@
 
 from pathlib import Path
 
+from datetime import datetime
+
 from media_backup.comparators import (
     Confidence,
+    _metadata_match,
     coverage_check,
     find_duplicates,
     safe_to_clear,
     sync_check,
     timeline_gaps,
 )
+from media_backup.scanner import MediaFile
 
 
 class TestSyncCheck:
@@ -179,3 +183,68 @@ class TestTimelineGaps:
         gaps, earliest, latest = timeline_gaps(root)
         assert gaps == []
         assert earliest is None
+
+
+def _mf(
+    name: str = "pic.jpg",
+    size: int = 100,
+    exif_date: datetime = None,
+    width: int = None,
+    height: int = None,
+    framerate: float = None,
+) -> MediaFile:
+    return MediaFile(
+        path=Path(f"/fake/{name}"),
+        rel_path=name,
+        name=name,
+        size=size,
+        mtime=0.0,
+        ext=Path(name).suffix.lower(),
+        exif_date=exif_date,
+        width=width,
+        height=height,
+        framerate=framerate,
+    )
+
+
+class TestMetadataMatch:
+    def test_exact_when_same_size(self):
+        assert _metadata_match(_mf(size=100), _mf(size=100)) == Confidence.EXACT
+
+    def test_likely_when_all_metadata_agrees(self):
+        dt = datetime(2024, 6, 15, 12, 0, 0)
+        src = _mf(size=100, exif_date=dt, width=4000, height=3000)
+        tgt = _mf(size=200, exif_date=dt, width=4000, height=3000)
+        assert _metadata_match(src, tgt) == Confidence.LIKELY
+
+    def test_ambiguous_when_no_metadata_available(self):
+        assert _metadata_match(_mf(size=100), _mf(size=200)) == Confidence.AMBIGUOUS
+
+    def test_ambiguous_when_some_metadata_agrees(self):
+        dt = datetime(2024, 6, 15, 12, 0, 0)
+        src = _mf(size=100, exif_date=dt, width=4000, height=3000)
+        tgt = _mf(size=200, exif_date=dt, width=1920, height=1080)
+        assert _metadata_match(src, tgt) == Confidence.AMBIGUOUS
+
+    def test_mismatch_when_all_metadata_disagrees(self):
+        src = _mf(
+            size=100,
+            exif_date=datetime(2024, 1, 1),
+            width=4000, height=3000,
+        )
+        tgt = _mf(
+            size=200,
+            exif_date=datetime(2023, 6, 15),
+            width=1920, height=1080,
+        )
+        assert _metadata_match(src, tgt) == Confidence.MISMATCH
+
+    def test_likely_with_framerate_only(self):
+        src = _mf("clip.mp4", size=100, framerate=29.97)
+        tgt = _mf("clip.mp4", size=200, framerate=29.97)
+        assert _metadata_match(src, tgt) == Confidence.LIKELY
+
+    def test_mismatch_with_framerate_only(self):
+        src = _mf("clip.mp4", size=100, framerate=29.97)
+        tgt = _mf("clip.mp4", size=200, framerate=60.0)
+        assert _metadata_match(src, tgt) == Confidence.MISMATCH

@@ -107,9 +107,10 @@ def render_coverage(result: CoverageResult, source_label: str, target_label: str
         )
         if n <= MAX_MISSING_LISTED:
             for m in result.ambiguous:
+                tgt_size = _size_fmt(m.target_file.size) if m.target_file else "?"
                 parts.append(f"  [yellow]? {m.source_file.name}[/]  "
                              f"(src: {_size_fmt(m.source_file.size)}, "
-                             f"tgt: {_size_fmt(m.target_file.size)})")
+                             f"tgt: {tgt_size})")
 
     if result.missing:
         n = len(result.missing)
@@ -119,8 +120,12 @@ def render_coverage(result: CoverageResult, source_label: str, target_label: str
             table = Table(title=f"Missing from {target_label} ({n} files)", expand=True)
             table.add_column("File")
             table.add_column("Size", justify="right")
+            table.add_column("Note")
             for m in result.missing:
-                table.add_row(m.source_file.name, _size_fmt(m.source_file.size))
+                note = ""
+                if m.target_file is not None:
+                    note = f"name exists but metadata disagrees ({_size_fmt(m.target_file.size)})"
+                table.add_row(m.source_file.name, _size_fmt(m.source_file.size), note)
             parts.append(table)
     elif not result.ambiguous:
         parts.append(f"[bold green]✓ Every file in {source_label} exists in {target_label}.[/]")
@@ -162,7 +167,10 @@ def render_safe_to_clear(result: SafeToClearResult, label: str) -> List:
             n = len(cov.missing)
             if n <= MAX_MISSING_LISTED:
                 for m in cov.missing:
-                    parts.append(f"    Missing on {drive}: {m.source_file.name}")
+                    detail = ""
+                    if m.target_file is not None:
+                        detail = " (name exists, metadata disagrees)"
+                    parts.append(f"    Missing on {drive}: {m.source_file.name}{detail}")
             else:
                 parts.append(f"    Missing on {drive}: {n} files")
 
