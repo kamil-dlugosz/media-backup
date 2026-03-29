@@ -77,9 +77,6 @@ def render_split(
     """
     term_width = shutil.get_terminal_size(fallback=(80, 24)).columns
 
-    right_content = _build_right_panel(paths, term_width)
-    right_panel = Panel(right_content, title="Reference", border_style="blue")
-
     if isinstance(result_renderables, str):
         result_renderables = [result_renderables]
 
@@ -89,8 +86,12 @@ def render_split(
     if term_width < NARROW_THRESHOLD:
         console.print(left_panel)
         if show_reference:
-            console.print(right_panel)
+            right_content = _build_right_panel(paths, term_width)
+            console.print(Panel(right_content, title="Reference", border_style="blue"))
         return
+
+    right_content = _build_right_panel(paths, term_width)
+    right_panel = Panel(right_content, title="Reference", border_style="blue")
 
     layout = Layout()
     layout.split_row(

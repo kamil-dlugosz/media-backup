@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from datetime import datetime
+from typing import Optional
 
 from media_backup.comparators import (
     Confidence,
@@ -188,10 +189,10 @@ class TestTimelineGaps:
 def _mf(
     name: str = "pic.jpg",
     size: int = 100,
-    exif_date: datetime = None,
-    width: int = None,
-    height: int = None,
-    framerate: float = None,
+    exif_date: Optional[datetime] = None,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+    framerate: Optional[float] = None,
 ) -> MediaFile:
     return MediaFile(
         path=Path(f"/fake/{name}"),

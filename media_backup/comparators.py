@@ -221,8 +221,8 @@ def coverage_check(
 ) -> CoverageResult:
     """Check whether every file in *source_path* exists somewhere in *target_path*."""
     _scan = cache.get if cache else scan_directory
-    source_files = _scan(source_path, label=source_label)
-    target_files = _scan(target_path, label=target_label)
+    source_files = _scan(source_path, read_metadata=True, label=source_label)
+    target_files = _scan(target_path, read_metadata=True, label=target_label)
     target_index = build_flat_index(target_files)
 
     return _match_files_against_index(source_files, target_index)
@@ -241,10 +241,10 @@ def safe_to_clear(
 ) -> SafeToClearResult:
     """Check if all files in *laptop_path* exist on both SSD and HDD."""
     _scan = cache.get if cache else scan_directory
-    laptop_files = _scan(laptop_path, label=laptop_label)
+    laptop_files = _scan(laptop_path, read_metadata=True, label=laptop_label)
 
-    ssd_index = build_flat_index(_scan(ssd_path, label="SSD"))
-    hdd_index = build_flat_index(_scan(hdd_path, label="HDD"))
+    ssd_index = build_flat_index(_scan(ssd_path, read_metadata=True, label="SSD"))
+    hdd_index = build_flat_index(_scan(hdd_path, read_metadata=True, label="HDD"))
 
     return SafeToClearResult(
         ssd_coverage=_match_files_against_index(laptop_files, ssd_index),

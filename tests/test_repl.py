@@ -6,6 +6,66 @@ from media_backup.repl import _dispatch, _parse_min_gap
 from media_backup.session import Session
 
 
+class TestOSErrorHandling:
+    """Verify that inaccessible paths produce friendly errors instead of tracebacks."""
+
+    _SCAN_PATCH = "media_backup.scanner.scan_directory"
+
+    @patch("media_backup.repl.render_split")
+    @patch(_SCAN_PATCH, side_effect=OSError("drive disconnected"))
+    def test_coverage_check_os_error(self, _mock_scan, mock_render, tmp_path):
+        session = Session()
+        session.set("src", str(tmp_path))
+        session.set("tgt", str(tmp_path))
+        result = _dispatch("coverage-check src tgt", session)
+        assert result is True
+        call_args = mock_render.call_args[0][0]
+        assert any("Error" in str(a) for a in call_args)
+
+    @patch("media_backup.repl.render_split")
+    @patch(_SCAN_PATCH, side_effect=OSError("drive disconnected"))
+    def test_sync_check_os_error(self, _mock_scan, mock_render, tmp_path):
+        session = Session()
+        session.set("SSD", str(tmp_path))
+        session.set("HDD", str(tmp_path))
+        result = _dispatch("sync-check", session)
+        assert result is True
+        call_args = mock_render.call_args[0][0]
+        assert any("Error" in str(a) for a in call_args)
+
+    @patch("media_backup.repl.render_split")
+    @patch(_SCAN_PATCH, side_effect=OSError("drive disconnected"))
+    def test_safe_to_clear_os_error(self, _mock_scan, mock_render, tmp_path):
+        session = Session()
+        session.set("SSD", str(tmp_path))
+        session.set("HDD", str(tmp_path))
+        session.set("laptop1", str(tmp_path))
+        result = _dispatch("safe-to-clear laptop1", session)
+        assert result is True
+        call_args = mock_render.call_args[0][0]
+        assert any("Error" in str(a) for a in call_args)
+
+    @patch("media_backup.repl.render_split")
+    @patch(_SCAN_PATCH, side_effect=OSError("drive disconnected"))
+    def test_duplicates_os_error(self, _mock_scan, mock_render, tmp_path):
+        session = Session()
+        session.set("mydir", str(tmp_path))
+        result = _dispatch("duplicates mydir", session)
+        assert result is True
+        call_args = mock_render.call_args[0][0]
+        assert any("Error" in str(a) for a in call_args)
+
+    @patch("media_backup.repl.render_split")
+    @patch(_SCAN_PATCH, side_effect=OSError("drive disconnected"))
+    def test_timeline_gaps_os_error(self, _mock_scan, mock_render, tmp_path):
+        session = Session()
+        session.set("mydir", str(tmp_path))
+        result = _dispatch("timeline-gaps mydir", session)
+        assert result is True
+        call_args = mock_render.call_args[0][0]
+        assert any("Error" in str(a) for a in call_args)
+
+
 class TestParseMinGap:
     def test_default(self):
         val, remaining = _parse_min_gap(["SSD"])
