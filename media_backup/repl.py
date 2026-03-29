@@ -33,7 +33,8 @@ class _Completer(Completer):
         words = text.split()
         word = document.get_word_before_cursor()
 
-        if len(words) <= 1:
+        completing_first_word = len(words) <= 1 and not text.endswith(" ")
+        if not words or completing_first_word:
             for cmd in COMMANDS:
                 if cmd.startswith(word):
                     yield Completion(cmd, start_position=-len(word))

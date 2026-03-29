@@ -167,6 +167,13 @@ def _metadata_match(src: MediaFile, tgt: MediaFile) -> Confidence:
     return Confidence.MISMATCH
 
 
+_CONF_RANK = {
+    Confidence.MISMATCH: 0,
+    Confidence.AMBIGUOUS: 1,
+    Confidence.LIKELY: 2,
+}
+
+
 def _match_files_against_index(
     source_files: List[MediaFile],
     target_index: Dict[str, List[MediaFile]],
@@ -186,15 +193,18 @@ def _match_files_against_index(
             continue
 
         if candidates:
-            best = candidates[0]
-            conf = _metadata_match(src, best)
-            if conf == Confidence.LIKELY:
-                result.matched.append(MatchResult(src, best, conf))
+            best_candidate, best_conf = candidates[0], _metadata_match(src, candidates[0])
+            for c in candidates[1:]:
+                conf = _metadata_match(src, c)
+                if _CONF_RANK.get(conf, 0) > _CONF_RANK.get(best_conf, 0):
+                    best_candidate, best_conf = c, conf
+            if best_conf == Confidence.LIKELY:
+                result.matched.append(MatchResult(src, best_candidate, best_conf))
                 continue
-            if conf == Confidence.AMBIGUOUS:
-                result.ambiguous.append(MatchResult(src, best, conf))
+            if best_conf == Confidence.AMBIGUOUS:
+                result.ambiguous.append(MatchResult(src, best_candidate, best_conf))
                 continue
-            result.missing.append(MatchResult(src, best, Confidence.MISMATCH))
+            result.missing.append(MatchResult(src, best_candidate, Confidence.MISMATCH))
             continue
 
         result.missing.append(MatchResult(src))

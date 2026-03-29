@@ -84,3 +84,86 @@ class TestDispatch:
         assert result is True
         call_args = mock_render.call_args[0][0]
         assert any("not set" in str(a) for a in call_args)
+
+    @patch("media_backup.repl.render_split")
+    def test_coverage_check_with_real_dirs(self, mock_render, tmp_path):
+        src = tmp_path / "src"
+        tgt = tmp_path / "tgt"
+        src.mkdir()
+        tgt.mkdir()
+        (src / "a.jpg").write_bytes(b"\x00" * 100)
+        (tgt / "a.jpg").write_bytes(b"\x00" * 100)
+
+        session = Session()
+        session.set("src", str(src))
+        session.set("tgt", str(tgt))
+        result = _dispatch("coverage-check src tgt", session)
+        assert result is True
+        call_args = mock_render.call_args[0][0]
+        assert any("100.0%" in str(a) for a in call_args)
+
+    @patch("media_backup.repl.render_split")
+    def test_duplicates_with_real_dir(self, mock_render, tmp_path):
+        root = tmp_path / "root"
+        (root / "a").mkdir(parents=True)
+        (root / "b").mkdir(parents=True)
+        (root / "a" / "pic.jpg").write_bytes(b"\x00" * 100)
+        (root / "b" / "pic.jpg").write_bytes(b"\x00" * 100)
+
+        session = Session()
+        session.set("mydir", str(root))
+        result = _dispatch("duplicates mydir", session)
+        assert result is True
+        call_args = mock_render.call_args[0][0]
+        assert any("duplicate" in str(a).lower() for a in call_args)
+
+    @patch("media_backup.repl.render_split")
+    def test_timeline_gaps_with_real_dir(self, mock_render, tmp_path):
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "pic.jpg").write_bytes(b"\x00" * 100)
+
+        session = Session()
+        session.set("mydir", str(root))
+        result = _dispatch("timeline-gaps mydir", session)
+        assert result is True
+        call_args = mock_render.call_args[0][0]
+        assert any("EXIF" in str(a) or "gap" in str(a).lower() or "date" in str(a).lower()
+                    for a in call_args)
+
+    @patch("media_backup.repl.render_split")
+    def test_sync_check_with_real_dirs(self, mock_render, tmp_path):
+        ssd = tmp_path / "ssd"
+        hdd = tmp_path / "hdd"
+        ssd.mkdir()
+        hdd.mkdir()
+        (ssd / "pic.jpg").write_bytes(b"\x00" * 100)
+        (hdd / "pic.jpg").write_bytes(b"\x00" * 100)
+
+        session = Session()
+        session.set("SSD", str(ssd))
+        session.set("HDD", str(hdd))
+        result = _dispatch("sync-check", session)
+        assert result is True
+        call_args = mock_render.call_args[0][0]
+        assert any("in sync" in str(a).lower() for a in call_args)
+
+    @patch("media_backup.repl.render_split")
+    def test_safe_to_clear_with_real_dirs(self, mock_render, tmp_path):
+        laptop = tmp_path / "laptop"
+        ssd = tmp_path / "ssd"
+        hdd = tmp_path / "hdd"
+        for d in (laptop, ssd, hdd):
+            d.mkdir()
+        (laptop / "pic.jpg").write_bytes(b"\x00" * 100)
+        (ssd / "pic.jpg").write_bytes(b"\x00" * 100)
+        (hdd / "pic.jpg").write_bytes(b"\x00" * 100)
+
+        session = Session()
+        session.set("SSD", str(ssd))
+        session.set("HDD", str(hdd))
+        session.set("laptop1", str(laptop))
+        result = _dispatch("safe-to-clear laptop1", session)
+        assert result is True
+        call_args = mock_render.call_args[0][0]
+        assert any("SAFE" in str(a) for a in call_args)
