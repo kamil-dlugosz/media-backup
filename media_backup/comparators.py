@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 
 from media_backup.scanner import (
     MediaFile,
+    ScanCache,
     build_flat_index,
     scan_directory,
 )
@@ -48,14 +49,16 @@ class SyncResult:
 @dataclass
 class CoverageResult:
     matched: List[MatchResult] = field(default_factory=list)
+    ambiguous: List[MatchResult] = field(default_factory=list)
     missing: List[MatchResult] = field(default_factory=list)
 
     @property
     def total_source(self) -> int:
-        return len(self.matched) + len(self.missing)
+        return len(self.matched) + len(self.ambiguous) + len(self.missing)
 
     @property
     def coverage_pct(self) -> float:
+        """Only exact and likely matches count as covered."""
         if self.total_source == 0:
             return 100.0
         return len(self.matched) / self.total_source * 100
@@ -95,10 +98,17 @@ class TimelineGap:
 # sync-check
 # ---------------------------------------------------------------------------
 
-def sync_check(path_a: Path, path_b: Path, label_a: str = "SSD", label_b: str = "HDD") -> SyncResult:
+def sync_check(
+    path_a: Path,
+    path_b: Path,
+    label_a: str = "SSD",
+    label_b: str = "HDD",
+    cache: Optional[ScanCache] = None,
+) -> SyncResult:
     """Compare two directories by relative path structure."""
-    files_a = scan_directory(path_a, label=label_a)
-    files_b = scan_directory(path_b, label=label_b)
+    _scan = cache.get if cache else scan_directory
+    files_a = _scan(path_a, label=label_a)
+    files_b = _scan(path_b, label=label_b)
 
     index_a: Dict[str, MediaFile] = {mf.rel_path: mf for mf in files_a}
     index_b: Dict[str, MediaFile] = {mf.rel_path: mf for mf in files_b}
@@ -151,7 +161,7 @@ def _metadata_match(src: MediaFile, tgt: MediaFile) -> Confidence:
         return Confidence.LIKELY
     if matches > 0:
         return Confidence.AMBIGUOUS
-    return Confidence.AMBIGUOUS
+    return Confidence.MISSING
 
 
 def coverage_check(
@@ -159,10 +169,12 @@ def coverage_check(
     target_path: Path,
     source_label: str = "source",
     target_label: str = "target",
+    cache: Optional[ScanCache] = None,
 ) -> CoverageResult:
     """Check whether every file in *source_path* exists somewhere in *target_path*."""
-    source_files = scan_directory(source_path, label=source_label)
-    target_files = scan_directory(target_path, label=target_label)
+    _scan = cache.get if cache else scan_directory
+    source_files = _scan(source_path, label=source_label)
+    target_files = _scan(target_path, label=target_label)
     target_index = build_flat_index(target_files)
 
     result = CoverageResult()
@@ -181,8 +193,11 @@ def coverage_check(
         if candidates:
             best = candidates[0]
             conf = _metadata_match(src, best)
-            if conf in (Confidence.LIKELY, Confidence.AMBIGUOUS):
+            if conf == Confidence.LIKELY:
                 result.matched.append(MatchResult(src, best, conf))
+                continue
+            if conf == Confidence.AMBIGUOUS:
+                result.ambiguous.append(MatchResult(src, best, conf))
                 continue
 
         result.missing.append(MatchResult(src))
@@ -199,14 +214,16 @@ def safe_to_clear(
     ssd_path: Path,
     hdd_path: Path,
     laptop_label: str = "laptop",
+    cache: Optional[ScanCache] = None,
 ) -> SafeToClearResult:
     """Check if all files in *laptop_path* exist on both SSD and HDD."""
-    laptop_files = scan_directory(laptop_path, label=laptop_label)
+    _scan = cache.get if cache else scan_directory
+    laptop_files = _scan(laptop_path, label=laptop_label)
 
-    ssd_files = scan_directory(ssd_path, label="SSD")
+    ssd_files = _scan(ssd_path, label="SSD")
     ssd_index = build_flat_index(ssd_files)
 
-    hdd_files = scan_directory(hdd_path, label="HDD")
+    hdd_files = _scan(hdd_path, label="HDD")
     hdd_index = build_flat_index(hdd_files)
 
     def _check(index: Dict[str, List[MediaFile]]) -> CoverageResult:
@@ -220,8 +237,10 @@ def safe_to_clear(
             elif candidates:
                 best = candidates[0]
                 conf = _metadata_match(src, best)
-                if conf in (Confidence.LIKELY, Confidence.AMBIGUOUS):
+                if conf == Confidence.LIKELY:
                     cov.matched.append(MatchResult(src, best, conf))
+                elif conf == Confidence.AMBIGUOUS:
+                    cov.ambiguous.append(MatchResult(src, best, conf))
                 else:
                     cov.missing.append(MatchResult(src))
             else:
@@ -238,9 +257,14 @@ def safe_to_clear(
 # duplicates
 # ---------------------------------------------------------------------------
 
-def find_duplicates(path: Path, label: str = "dir") -> List[DuplicateGroup]:
+def find_duplicates(
+    path: Path,
+    label: str = "dir",
+    cache: Optional[ScanCache] = None,
+) -> List[DuplicateGroup]:
     """Find files with identical name+size in different subdirectories."""
-    files = scan_directory(path, label=label)
+    _scan = cache.get if cache else scan_directory
+    files = _scan(path, label=label)
 
     buckets: Dict[Tuple[str, int], List[MediaFile]] = defaultdict(list)
     for mf in files:
@@ -270,12 +294,14 @@ def timeline_gaps(
     path: Path,
     label: str = "dir",
     min_gap_days: int = 7,
+    cache: Optional[ScanCache] = None,
 ) -> Tuple[List[TimelineGap], Optional[datetime], Optional[datetime]]:
     """Find date gaps across all media in *path* (flattened, all subdirs).
 
     Returns (gaps, earliest_date, latest_date).
     """
-    files = scan_directory(path, read_metadata=True, label=label)
+    _scan = cache.get if cache else scan_directory
+    files = _scan(path, read_metadata=True, label=label)
 
     dates: List[datetime] = []
     for mf in files:

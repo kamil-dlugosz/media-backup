@@ -3,23 +3,25 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import List, Tuple, Union
 
 from rich.console import Console, Group
 from rich.layout import Layout
 from rich.panel import Panel
-from rich.text import Text
 
 from media_backup.session import REQUIRED_PATHS
 
 NARROW_THRESHOLD = 100
 
 
-def _build_right_panel(paths: List[Tuple[str, object]]) -> str:
+def _build_right_panel(paths: List[Tuple[str, Path]], term_width: int = 100) -> str:
     """Build the right-panel markup string."""
     lines: List[str] = []
 
     lines.append("[bold underline]SESSION PATHS[/]")
+    max_path_len = max(20, (term_width // 5) * 2 - 12)
+
     if not paths:
         lines.append("  [dim](none set)[/]")
     else:
@@ -28,8 +30,8 @@ def _build_right_panel(paths: List[Tuple[str, object]]) -> str:
             if name in REQUIRED_PATHS:
                 marker = " [bold green][✓][/]"
             path_str = str(p)
-            if len(path_str) > 30:
-                path_str = path_str[:27] + "…"
+            if len(path_str) > max_path_len:
+                path_str = path_str[: max_path_len - 1] + "…"
             lines.append(f"  [bold]{name:<8}[/] {path_str}{marker}")
 
     for req in REQUIRED_PATHS:
@@ -63,13 +65,13 @@ def _build_right_panel(paths: List[Tuple[str, object]]) -> str:
 
 def render_split(
     result_renderables: Union[List, str],
-    paths: List[Tuple[str, object]],
+    paths: List[Tuple[str, Path]],
     console: Console,
 ) -> None:
     """Print the two-column layout (or single-column on narrow terminals)."""
     term_width = os.get_terminal_size(fallback=(80, 24)).columns
 
-    right_content = _build_right_panel(paths)
+    right_content = _build_right_panel(paths, term_width)
     right_panel = Panel(right_content, title="Reference", border_style="blue")
 
     if isinstance(result_renderables, str):

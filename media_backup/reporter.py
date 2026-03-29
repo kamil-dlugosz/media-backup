@@ -4,44 +4,38 @@ from __future__ import annotations
 
 from typing import List
 
-from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
 from media_backup.comparators import (
-    Confidence,
     CoverageResult,
     DuplicateGroup,
     SafeToClearResult,
     SyncResult,
-    TimelineGap,
 )
-
-console = Console()
 
 MAX_MISSING_LISTED = 15
 
 
 def _size_fmt(size: int) -> str:
+    value = float(size)
     for unit in ("B", "KB", "MB", "GB"):
-        if abs(size) < 1024:
-            return f"{size:.1f} {unit}" if unit != "B" else f"{size} {unit}"
-        size /= 1024  # type: ignore[assignment]
-    return f"{size:.1f} TB"
+        if abs(value) < 1024:
+            return f"{value:.1f} {unit}" if unit != "B" else f"{size} {unit}"
+        value /= 1024
+    return f"{value:.1f} TB"
 
 
 # ---------------------------------------------------------------------------
 # sync-check
 # ---------------------------------------------------------------------------
 
-def render_sync(result: SyncResult, label_a: str = "SSD", label_b: str = "HDD") -> str:
-    """Return a Rich-renderable string for sync-check results."""
-    parts: List[str] = []
+def render_sync(result: SyncResult, label_a: str = "SSD", label_b: str = "HDD") -> List:
+    """Return a list of Rich renderables for sync-check results."""
+    parts: List = []
 
     if result.in_sync:
         parts.append(f"[bold green]✓ {label_a} and {label_b} are fully in sync.[/]")
-        return "\n".join(parts)
+        return parts
 
     if result.only_in_a:
         table = Table(title=f"Only in {label_a} ({len(result.only_in_a)} files)", expand=True)
@@ -84,11 +78,6 @@ def render_sync(result: SyncResult, label_a: str = "SSD", label_b: str = "HDD") 
     return parts
 
 
-def render_sync_to_console(result: SyncResult, label_a: str = "SSD", label_b: str = "HDD") -> List:
-    """Return list of Rich renderables for the split layout."""
-    return render_sync(result, label_a, label_b)
-
-
 # ---------------------------------------------------------------------------
 # coverage-check
 # ---------------------------------------------------------------------------
@@ -108,6 +97,18 @@ def render_coverage(result: CoverageResult, source_label: str, target_label: str
         breakdown = "  ".join(f"{k}: {v}" for k, v in sorted(confidence_counts.items()))
         parts.append(f"  Match confidence: {breakdown}")
 
+    if result.ambiguous:
+        n = len(result.ambiguous)
+        parts.append(
+            f"\n[bold yellow]Ambiguous: {n} file(s)[/] — same name, different size, "
+            f"insufficient metadata to confirm"
+        )
+        if n <= MAX_MISSING_LISTED:
+            for m in result.ambiguous:
+                parts.append(f"  [yellow]? {m.source_file.name}[/]  "
+                             f"(src: {_size_fmt(m.source_file.size)}, "
+                             f"tgt: {_size_fmt(m.target_file.size)})")
+
     if result.missing:
         n = len(result.missing)
         if n > MAX_MISSING_LISTED:
@@ -119,7 +120,7 @@ def render_coverage(result: CoverageResult, source_label: str, target_label: str
             for m in result.missing:
                 table.add_row(m.source_file.name, _size_fmt(m.source_file.size))
             parts.append(table)
-    else:
+    elif not result.ambiguous:
         parts.append(f"[bold green]✓ Every file in {source_label} exists in {target_label}.[/]")
 
     return parts
@@ -138,21 +139,32 @@ def render_safe_to_clear(result: SafeToClearResult, label: str) -> List:
     parts.append(f"  {label} → SSD: [bold]{ssd_pct:.1f}%[/] covered")
     parts.append(f"  {label} → HDD: [bold]{hdd_pct:.1f}%[/] covered")
 
-    if result.safe:
+    has_ambiguous = (result.ssd_coverage.ambiguous or result.hdd_coverage.ambiguous)
+
+    if result.safe and not has_ambiguous:
         total = result.ssd_coverage.total_source
         parts.append(
             f"\n[bold green]✓ SAFE TO DELETE[/] — all {total} files exist on both drives"
         )
+    elif result.safe and has_ambiguous:
+        parts.append(
+            "\n[bold yellow]⚠ PROBABLY SAFE[/] — all files matched, but some matches "
+            "are ambiguous (same name, different size)"
+        )
     else:
         parts.append("\n[bold red]✗ NOT SAFE[/] — some files are missing from at least one drive")
-        for drive, cov in [("SSD", result.ssd_coverage), ("HDD", result.hdd_coverage)]:
-            if cov.missing:
-                n = len(cov.missing)
-                if n <= MAX_MISSING_LISTED:
-                    for m in cov.missing:
-                        parts.append(f"    Missing on {drive}: {m.source_file.name}")
-                else:
-                    parts.append(f"    Missing on {drive}: {n} files")
+
+    for drive, cov in [("SSD", result.ssd_coverage), ("HDD", result.hdd_coverage)]:
+        if cov.ambiguous:
+            n = len(cov.ambiguous)
+            parts.append(f"    [yellow]Ambiguous on {drive}: {n} file(s)[/]")
+        if cov.missing:
+            n = len(cov.missing)
+            if n <= MAX_MISSING_LISTED:
+                for m in cov.missing:
+                    parts.append(f"    Missing on {drive}: {m.source_file.name}")
+            else:
+                parts.append(f"    Missing on {drive}: {n} files")
 
     return parts
 

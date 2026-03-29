@@ -138,7 +138,7 @@ def scan_directory(
             ext = p.suffix.lower()
             mf = MediaFile(
                 path=p,
-                rel_path=str(p.relative_to(root)),
+                rel_path=p.relative_to(root).as_posix(),
                 name=p.name,
                 size=stat.st_size,
                 mtime=stat.st_mtime,
@@ -169,3 +169,33 @@ def build_flat_index(
         key = mf.name.lower()
         index.setdefault(key, []).append(mf)
     return index
+
+
+class ScanCache:
+    """Caches scan results per (path, read_metadata) to avoid re-walking large drives."""
+
+    def __init__(self) -> None:
+        self._cache: Dict[tuple, List[MediaFile]] = {}
+
+    def get(
+        self,
+        root: Path,
+        *,
+        read_metadata: bool = False,
+        label: Optional[str] = None,
+    ) -> List[MediaFile]:
+        key = (str(root.resolve()), read_metadata)
+        if key not in self._cache:
+            self._cache[key] = scan_directory(
+                root, read_metadata=read_metadata, label=label,
+            )
+        return self._cache[key]
+
+    def invalidate(self, root: Optional[Path] = None) -> None:
+        if root is None:
+            self._cache.clear()
+        else:
+            resolved = str(root.resolve())
+            self._cache = {
+                k: v for k, v in self._cache.items() if k[0] != resolved
+            }

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shlex
-from typing import List
+from typing import List, Tuple
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
@@ -50,10 +50,10 @@ def _show(result_parts, session: Session) -> None:
     render_split(result_parts, session.list_paths(), console)
 
 
-def _parse_min_gap(args: List[str]) -> int:
-    """Extract --min-gap N from args, return the value and remaining args."""
+def _parse_min_gap(args: List[str]) -> Tuple[int, List[str]]:
+    """Extract --min-gap N from args, return (value, remaining args)."""
     min_gap = 7
-    filtered = []
+    filtered: List[str] = []
     skip_next = False
     for i, arg in enumerate(args):
         if skip_next:
@@ -61,7 +61,9 @@ def _parse_min_gap(args: List[str]) -> int:
             continue
         if arg == "--min-gap" and i + 1 < len(args):
             try:
-                min_gap = int(args[i + 1])
+                val = int(args[i + 1])
+                if val > 0:
+                    min_gap = val
             except ValueError:
                 pass
             skip_next = True
@@ -91,8 +93,11 @@ def _dispatch(line: str, session: Session) -> bool:
             return True
         name = args[0]
         path = " ".join(args[1:])
-        p = session.set(name, path)
-        _show([f"[green]✓ {name} = {p}[/]"], session)
+        p, exists = session.set(name, path)
+        parts = [f"[green]✓ {name} = {p}[/]"]
+        if not exists:
+            parts.append(f"[bold yellow]⚠ Warning: path does not exist: {p}[/]")
+        _show(parts, session)
         return True
 
     if cmd == "unset":
@@ -116,7 +121,20 @@ def _dispatch(line: str, session: Session) -> bool:
         return True
 
     if cmd == "help":
-        _show(["Type commands listed in the right panel."], session)
+        help_lines = [
+            "[bold underline]Commands[/]",
+            "  [bold cyan]sync-check[/]                    SSD vs HDD — path structure diff",
+            "  [bold cyan]coverage-check <src> <tgt>[/]    Every file from src found in tgt?",
+            "  [bold cyan]safe-to-clear <dir>[/]           Safe to delete this laptop dir?",
+            "  [bold cyan]duplicates <dir>[/]              Same file in multiple subdirs?",
+            "  [bold cyan]timeline-gaps <dir>[/]           Date gaps across entire drive",
+            "",
+            "  [bold cyan]set <name> <path>[/]             Register a named path",
+            "  [bold cyan]unset <name>[/]                  Remove a named path",
+            "  [bold cyan]paths[/]                         List all current paths",
+            "  [bold cyan]quit[/] / [bold cyan]exit[/]                    End session",
+        ]
+        _show(help_lines, session)
         return True
 
     if cmd in ("quit", "exit"):
@@ -132,9 +150,8 @@ def _dispatch(line: str, session: Session) -> bool:
             return True
         ssd = session.get("SSD")
         hdd = session.get("HDD")
-        result = comparators.sync_check(ssd, hdd)
-        parts = reporter.render_sync(result)
-        _show(parts if isinstance(parts, list) else [parts], session)
+        result = comparators.sync_check(ssd, hdd, cache=session.cache)
+        _show(reporter.render_sync(result), session)
         return True
 
     if cmd == "coverage-check":
@@ -149,7 +166,9 @@ def _dispatch(line: str, session: Session) -> bool:
         if tgt_path is None:
             _show([f"[red]Path not found: {args[1]}[/]"], session)
             return True
-        result = comparators.coverage_check(src_path, tgt_path, src_label, tgt_label)
+        result = comparators.coverage_check(
+            src_path, tgt_path, src_label, tgt_label, cache=session.cache,
+        )
         _show(reporter.render_coverage(result, src_label, tgt_label), session)
         return True
 
@@ -167,7 +186,9 @@ def _dispatch(line: str, session: Session) -> bool:
             return True
         ssd = session.get("SSD")
         hdd = session.get("HDD")
-        result = comparators.safe_to_clear(path, ssd, hdd, label)
+        result = comparators.safe_to_clear(
+            path, ssd, hdd, label, cache=session.cache,
+        )
         _show(reporter.render_safe_to_clear(result, label), session)
         return True
 
@@ -179,7 +200,7 @@ def _dispatch(line: str, session: Session) -> bool:
         if path is None:
             _show([f"[red]Path not found: {args[0]}[/]"], session)
             return True
-        groups = comparators.find_duplicates(path, label)
+        groups = comparators.find_duplicates(path, label, cache=session.cache)
         _show(reporter.render_duplicates(groups), session)
         return True
 
@@ -195,7 +216,9 @@ def _dispatch(line: str, session: Session) -> bool:
         if path is None:
             _show([f"[red]Path not found: {remaining[0]}[/]"], session)
             return True
-        gaps, earliest, latest = comparators.timeline_gaps(path, label, min_gap)
+        gaps, earliest, latest = comparators.timeline_gaps(
+            path, label, min_gap, cache=session.cache,
+        )
         _show(reporter.render_timeline_gaps(gaps, earliest, latest, min_gap), session)
         return True
 

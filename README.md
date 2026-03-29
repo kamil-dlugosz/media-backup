@@ -8,7 +8,7 @@ are ever deleted or modified.**
 ## Installation
 
 ```bash
-git clone https://github.com/<you>/media_backup.git
+git clone https://github.com/kamil-dlugosz-affirm/media-backup.git
 cd media_backup
 poetry install
 poetry shell
@@ -112,4 +112,4 @@ Supported media extensions: `.jpg` `.jpeg` `.png` `.heic` `.heif` `.mp4` `.mov`
 - **No files are ever deleted or modified.** This tool is strictly read-only.
 - Paths set during a session are forgotten when you quit.
 - The tool runs on the laptop and accesses drives/phone dumps mounted as regular directories.
-- Install `pymediainfo` for video metadata support: `poetry install -E optional`
+- Install `pymediainfo` for video metadata support: `pip install pymediainfo`

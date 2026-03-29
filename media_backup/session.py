@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from media_backup.scanner import ScanCache
+
 REQUIRED_PATHS = ("SSD", "HDD")
 
 
@@ -13,12 +15,13 @@ class Session:
 
     def __init__(self) -> None:
         self._paths: Dict[str, Path] = {}
+        self.cache: ScanCache = ScanCache()
 
-    def set(self, name: str, path: str) -> Path:
-        """Register *name* → *path*.  Returns the resolved Path."""
+    def set(self, name: str, path: str) -> Tuple[Path, bool]:
+        """Register *name* → *path*.  Returns (resolved Path, exists)."""
         p = Path(path)
         self._paths[name] = p
-        return p
+        return p, p.exists()
 
     def unset(self, name: str) -> bool:
         """Remove a named path.  Returns True if it existed."""

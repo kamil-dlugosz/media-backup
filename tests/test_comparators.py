@@ -8,6 +8,7 @@ from media_backup.comparators import (
     find_duplicates,
     safe_to_clear,
     sync_check,
+    timeline_gaps,
 )
 
 
@@ -89,6 +90,20 @@ class TestCoverageCheck:
         result = coverage_check(src, tgt)
         assert result.coverage_pct == 100.0
 
+    def test_same_name_different_size_is_ambiguous(self, tmp_path):
+        src = tmp_path / "src"
+        tgt = tmp_path / "tgt"
+        src.mkdir()
+        tgt.mkdir()
+
+        (src / "pic.jpg").write_bytes(b"\x00" * 100)
+        (tgt / "pic.jpg").write_bytes(b"\x00" * 999)
+
+        result = coverage_check(src, tgt)
+        assert len(result.ambiguous) == 1
+        assert len(result.matched) == 0
+        assert result.coverage_pct == 0.0
+
 
 class TestSafeToClear:
     def test_safe_when_on_both_drives(self, tmp_path):
@@ -143,7 +158,24 @@ class TestFindDuplicates:
         root = tmp_path / "root" / "same"
         root.mkdir(parents=True)
         (root / "pic.jpg").write_bytes(b"\x00" * 100)
-        # Can't have two files with same name in same dir,
-        # so this just confirms no false positives.
         groups = find_duplicates(tmp_path / "root")
         assert groups == []
+
+
+class TestTimelineGaps:
+    def test_no_exif_returns_empty(self, tmp_path):
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "pic.jpg").write_bytes(b"\x00" * 100)
+
+        gaps, earliest, latest = timeline_gaps(root, min_gap_days=7)
+        assert gaps == []
+        assert earliest is None
+        assert latest is None
+
+    def test_empty_dir_returns_empty(self, tmp_path):
+        root = tmp_path / "empty"
+        root.mkdir()
+        gaps, earliest, latest = timeline_gaps(root)
+        assert gaps == []
+        assert earliest is None
