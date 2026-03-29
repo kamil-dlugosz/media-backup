@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import shlex
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.completion import CompleteEvent, Completer, Completion
+from prompt_toolkit.document import Document
 from prompt_toolkit.history import InMemoryHistory
 from rich.console import Console
 
@@ -28,7 +29,7 @@ class _Completer(Completer):
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def get_completions(self, document, complete_event):
+    def get_completions(self, document: Document, complete_event: CompleteEvent):
         text = document.text_before_cursor
         words = text.split()
         word = document.get_word_before_cursor()
@@ -44,11 +45,24 @@ class _Completer(Completer):
                     yield Completion(name, start_position=-len(word))
 
 
-def _show(result_parts, session: Session) -> None:
+def _show(
+    result_parts: Union[List, str],
+    session: Session,
+    *,
+    show_reference: bool = False,
+) -> None:
     """Render results via the split layout."""
     if isinstance(result_parts, str):
         result_parts = [result_parts]
-    render_split(result_parts, session.list_paths(), console)
+    render_split(
+        result_parts, session.list_paths(), console,
+        show_reference=show_reference,
+    )
+
+
+def _handle_os_error(e: OSError, session: Session) -> None:
+    """Show a friendly message when a path becomes inaccessible."""
+    _show([f"[bold red]Error accessing path: {e}[/]"], session)
 
 
 def _parse_min_gap(args: List[str]) -> Tuple[int, List[str]]:
@@ -98,7 +112,7 @@ def _dispatch(line: str, session: Session) -> bool:
         output = [f"[green]✓ {name} = {p}[/]"]
         if not exists:
             output.append(f"[bold yellow]⚠ Warning: path does not exist: {p}[/]")
-        _show(output, session)
+        _show(output, session, show_reference=True)
         return True
 
     if cmd == "unset":
@@ -107,7 +121,7 @@ def _dispatch(line: str, session: Session) -> bool:
             return True
         name = args[0]
         if session.unset(name):
-            _show([f"[green]✓ Removed {name}[/]"], session)
+            _show([f"[green]✓ Removed {name}[/]"], session, show_reference=True)
         else:
             _show([f"[yellow]{name} was not set.[/]"], session)
         return True
@@ -115,10 +129,10 @@ def _dispatch(line: str, session: Session) -> bool:
     if cmd == "paths":
         paths = session.list_paths()
         if not paths:
-            _show(["[dim]No paths set.[/]"], session)
+            _show(["[dim]No paths set.[/]"], session, show_reference=True)
         else:
             lines = [f"  [bold]{n:<10}[/] {p}" for n, p in paths]
-            _show(lines, session)
+            _show(lines, session, show_reference=True)
         return True
 
     if cmd == "help":
@@ -135,7 +149,7 @@ def _dispatch(line: str, session: Session) -> bool:
             "  [bold cyan]paths[/]                         List all current paths",
             "  [bold cyan]quit[/] / [bold cyan]exit[/]                    End session",
         ]
-        _show(help_lines, session)
+        _show(help_lines, session, show_reference=True)
         return True
 
     if cmd in ("quit", "exit"):
@@ -151,7 +165,11 @@ def _dispatch(line: str, session: Session) -> bool:
             return True
         ssd = session.get("SSD")
         hdd = session.get("HDD")
-        result = comparators.sync_check(ssd, hdd, cache=session.cache)
+        try:
+            result = comparators.sync_check(ssd, hdd, cache=session.cache)
+        except OSError as e:
+            _handle_os_error(e, session)
+            return True
         _show(reporter.render_sync(result), session)
         return True
 
@@ -167,9 +185,13 @@ def _dispatch(line: str, session: Session) -> bool:
         if tgt_path is None:
             _show([f"[red]Path not found: {args[1]}[/]"], session)
             return True
-        result = comparators.coverage_check(
-            src_path, tgt_path, src_label, tgt_label, cache=session.cache,
-        )
+        try:
+            result = comparators.coverage_check(
+                src_path, tgt_path, src_label, tgt_label, cache=session.cache,
+            )
+        except OSError as e:
+            _handle_os_error(e, session)
+            return True
         _show(reporter.render_coverage(result, src_label, tgt_label), session)
         return True
 
@@ -187,9 +209,13 @@ def _dispatch(line: str, session: Session) -> bool:
             return True
         ssd = session.get("SSD")
         hdd = session.get("HDD")
-        result = comparators.safe_to_clear(
-            path, ssd, hdd, label, cache=session.cache,
-        )
+        try:
+            result = comparators.safe_to_clear(
+                path, ssd, hdd, label, cache=session.cache,
+            )
+        except OSError as e:
+            _handle_os_error(e, session)
+            return True
         _show(reporter.render_safe_to_clear(result, label), session)
         return True
 
@@ -201,7 +227,11 @@ def _dispatch(line: str, session: Session) -> bool:
         if path is None:
             _show([f"[red]Path not found: {args[0]}[/]"], session)
             return True
-        groups = comparators.find_duplicates(path, label, cache=session.cache)
+        try:
+            groups = comparators.find_duplicates(path, label, cache=session.cache)
+        except OSError as e:
+            _handle_os_error(e, session)
+            return True
         _show(reporter.render_duplicates(groups), session)
         return True
 
@@ -217,9 +247,13 @@ def _dispatch(line: str, session: Session) -> bool:
         if path is None:
             _show([f"[red]Path not found: {remaining[0]}[/]"], session)
             return True
-        gaps, earliest, latest = comparators.timeline_gaps(
-            path, label, min_gap, cache=session.cache,
-        )
+        try:
+            gaps, earliest, latest = comparators.timeline_gaps(
+                path, label, min_gap, cache=session.cache,
+            )
+        except OSError as e:
+            _handle_os_error(e, session)
+            return True
         _show(reporter.render_timeline_gaps(gaps, earliest, latest, min_gap), session)
         return True
 

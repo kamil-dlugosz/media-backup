@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+import shutil
 from pathlib import Path
 from typing import List, Tuple, Union
 
@@ -67,9 +67,15 @@ def render_split(
     result_renderables: Union[List, str],
     paths: List[Tuple[str, Path]],
     console: Console,
+    *,
+    show_reference: bool = False,
 ) -> None:
-    """Print the two-column layout (or single-column on narrow terminals)."""
-    term_width = os.get_terminal_size(fallback=(80, 24)).columns
+    """Print the two-column layout (or single-column on narrow terminals).
+
+    On narrow terminals the reference panel is only shown when
+    *show_reference* is True (used by help / paths commands).
+    """
+    term_width = shutil.get_terminal_size(fallback=(80, 24)).columns
 
     right_content = _build_right_panel(paths, term_width)
     right_panel = Panel(right_content, title="Reference", border_style="blue")
@@ -82,7 +88,8 @@ def render_split(
 
     if term_width < NARROW_THRESHOLD:
         console.print(left_panel)
-        console.print(right_panel)
+        if show_reference:
+            console.print(right_panel)
         return
 
     layout = Layout()
