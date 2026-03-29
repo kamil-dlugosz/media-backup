@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 
 from rich.table import Table
 
@@ -11,6 +12,7 @@ from media_backup.comparators import (
     DuplicateGroup,
     SafeToClearResult,
     SyncResult,
+    TimelineGap,
 )
 
 MAX_MISSING_LISTED = 15
@@ -139,14 +141,12 @@ def render_safe_to_clear(result: SafeToClearResult, label: str) -> List:
     parts.append(f"  {label} → SSD: [bold]{ssd_pct:.1f}%[/] covered")
     parts.append(f"  {label} → HDD: [bold]{hdd_pct:.1f}%[/] covered")
 
-    has_ambiguous = (result.ssd_coverage.ambiguous or result.hdd_coverage.ambiguous)
-
-    if result.safe and not has_ambiguous:
+    if result.safe and not result.has_ambiguous:
         total = result.ssd_coverage.total_source
         parts.append(
             f"\n[bold green]✓ SAFE TO DELETE[/] — all {total} files exist on both drives"
         )
-    elif result.safe and has_ambiguous:
+    elif result.safe and result.has_ambiguous:
         parts.append(
             "\n[bold yellow]⚠ PROBABLY SAFE[/] — all files matched, but some matches "
             "are ambiguous (same name, different size)"
@@ -201,7 +201,12 @@ def render_duplicates(groups: List[DuplicateGroup]) -> List:
 # timeline-gaps
 # ---------------------------------------------------------------------------
 
-def render_timeline_gaps(gaps, earliest, latest, min_gap_days: int) -> List:
+def render_timeline_gaps(
+    gaps: List[TimelineGap],
+    earliest: Optional[datetime],
+    latest: Optional[datetime],
+    min_gap_days: int,
+) -> List:
     parts: List = []
 
     if earliest is None:

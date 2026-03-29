@@ -94,10 +94,10 @@ def _dispatch(line: str, session: Session) -> bool:
         name = args[0]
         path = " ".join(args[1:])
         p, exists = session.set(name, path)
-        parts = [f"[green]✓ {name} = {p}[/]"]
+        output = [f"[green]✓ {name} = {p}[/]"]
         if not exists:
-            parts.append(f"[bold yellow]⚠ Warning: path does not exist: {p}[/]")
-        _show(parts, session)
+            output.append(f"[bold yellow]⚠ Warning: path does not exist: {p}[/]")
+        _show(output, session)
         return True
 
     if cmd == "unset":

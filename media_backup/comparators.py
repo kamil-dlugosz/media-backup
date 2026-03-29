@@ -71,10 +71,12 @@ class SafeToClearResult:
 
     @property
     def safe(self) -> bool:
-        return (
-            self.ssd_coverage.coverage_pct == 100.0
-            and self.hdd_coverage.coverage_pct == 100.0
-        )
+        """True when nothing is missing (matched + ambiguous cover everything)."""
+        return not self.ssd_coverage.missing and not self.hdd_coverage.missing
+
+    @property
+    def has_ambiguous(self) -> bool:
+        return bool(self.ssd_coverage.ambiguous or self.hdd_coverage.ambiguous)
 
 
 @dataclass

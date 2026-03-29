@@ -9,7 +9,7 @@ are ever deleted or modified.**
 
 ```bash
 git clone https://github.com/kamil-dlugosz-affirm/media-backup.git
-cd media_backup
+cd media-backup
 poetry install
 poetry shell
 ```

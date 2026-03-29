@@ -189,7 +189,7 @@ class ScanCache:
             self._cache[key] = scan_directory(
                 root, read_metadata=read_metadata, label=label,
             )
-        return self._cache[key]
+        return list(self._cache[key])
 
     def invalidate(self, root: Optional[Path] = None) -> None:
         if root is None:

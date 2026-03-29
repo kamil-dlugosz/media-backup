@@ -90,6 +90,19 @@ class TestRenderSafeToClear:
         assert isinstance(parts, list)
         assert any("SAFE" in str(p) for p in parts)
 
+    def test_probably_safe_with_ambiguous(self):
+        cov = CoverageResult(
+            matched=[MatchResult(_fake_mf(), _fake_mf(), Confidence.EXACT)],
+            ambiguous=[MatchResult(
+                _fake_mf("maybe.jpg", 100),
+                _fake_mf("maybe.jpg", 200),
+                Confidence.AMBIGUOUS,
+            )],
+        )
+        result = SafeToClearResult(ssd_coverage=cov, hdd_coverage=cov)
+        parts = render_safe_to_clear(result, "laptop1")
+        assert any("PROBABLY SAFE" in str(p) for p in parts)
+
     def test_not_safe(self):
         cov_ok = CoverageResult(
             matched=[MatchResult(_fake_mf(), _fake_mf(), Confidence.EXACT)],

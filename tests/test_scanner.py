@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from media_backup.scanner import MEDIA_EXTENSIONS, MediaFile, build_flat_index, scan_directory
+from media_backup.scanner import build_flat_index, scan_directory
 
 
 def _make(tmp_path: Path, name: str, size: int = 100) -> Path:
@@ -31,7 +31,7 @@ class TestScanDirectory:
 
         assert len(files) == 1
         assert files[0].name == "photo.heic"
-        assert files[0].rel_path == str(Path("sub") / "deep" / "photo.heic")
+        assert files[0].rel_path == "sub/deep/photo.heic"
 
     def test_size_and_metadata(self, tmp_path):
         _make(tmp_path, "pic.jpg", 1234)
