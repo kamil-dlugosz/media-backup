@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "media-backup"
+version = "0.1.0"
+description = "Interactive tool for verifying media backup consistency across phones, laptop, and external drives"
+authors = ["Kamil Dlugosz"]
+readme = "README.md"
+packages = [{include = "media_backup"}]
+
+[tool.poetry.scripts]
+media-backup = "media_backup.__main__:main"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+rich = ">=13.0"
+prompt-toolkit = ">=3.0"
+Pillow = ">=10.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

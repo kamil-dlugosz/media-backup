@@ -1,0 +1,300 @@
+"""Comparison logic for all verification commands."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from media_backup.scanner import (
+    MediaFile,
+    build_flat_index,
+    scan_directory,
+)
+
+
+# ---------------------------------------------------------------------------
+# Shared types
+# ---------------------------------------------------------------------------
+
+class Confidence(Enum):
+    EXACT = "exact"
+    LIKELY = "likely"
+    AMBIGUOUS = "ambiguous"
+    MISSING = "missing"
+
+
+@dataclass
+class MatchResult:
+    source_file: MediaFile
+    target_file: Optional[MediaFile] = None
+    confidence: Confidence = Confidence.MISSING
+
+
+@dataclass
+class SyncResult:
+    only_in_a: List[MediaFile] = field(default_factory=list)
+    only_in_b: List[MediaFile] = field(default_factory=list)
+    diverged: List[Tuple[MediaFile, MediaFile]] = field(default_factory=list)
+
+    @property
+    def in_sync(self) -> bool:
+        return not self.only_in_a and not self.only_in_b and not self.diverged
+
+
+@dataclass
+class CoverageResult:
+    matched: List[MatchResult] = field(default_factory=list)
+    missing: List[MatchResult] = field(default_factory=list)
+
+    @property
+    def total_source(self) -> int:
+        return len(self.matched) + len(self.missing)
+
+    @property
+    def coverage_pct(self) -> float:
+        if self.total_source == 0:
+            return 100.0
+        return len(self.matched) / self.total_source * 100
+
+
+@dataclass
+class SafeToClearResult:
+    ssd_coverage: CoverageResult
+    hdd_coverage: CoverageResult
+
+    @property
+    def safe(self) -> bool:
+        return (
+            self.ssd_coverage.coverage_pct == 100.0
+            and self.hdd_coverage.coverage_pct == 100.0
+        )
+
+
+@dataclass
+class DuplicateGroup:
+    name: str
+    size: int
+    paths: List[str]
+
+
+@dataclass
+class TimelineGap:
+    start: datetime
+    end: datetime
+
+    @property
+    def days(self) -> int:
+        return (self.end - self.start).days
+
+
+# ---------------------------------------------------------------------------
+# sync-check
+# ---------------------------------------------------------------------------
+
+def sync_check(path_a: Path, path_b: Path, label_a: str = "SSD", label_b: str = "HDD") -> SyncResult:
+    """Compare two directories by relative path structure."""
+    files_a = scan_directory(path_a, label=label_a)
+    files_b = scan_directory(path_b, label=label_b)
+
+    index_a: Dict[str, MediaFile] = {mf.rel_path: mf for mf in files_a}
+    index_b: Dict[str, MediaFile] = {mf.rel_path: mf for mf in files_b}
+
+    keys_a = set(index_a.keys())
+    keys_b = set(index_b.keys())
+
+    result = SyncResult()
+    result.only_in_a = [index_a[k] for k in sorted(keys_a - keys_b)]
+    result.only_in_b = [index_b[k] for k in sorted(keys_b - keys_a)]
+
+    for k in sorted(keys_a & keys_b):
+        a, b = index_a[k], index_b[k]
+        if a.size != b.size:
+            result.diverged.append((a, b))
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# coverage-check
+# ---------------------------------------------------------------------------
+
+def _metadata_match(src: MediaFile, tgt: MediaFile) -> Confidence:
+    """Compare metadata beyond name+size to determine confidence."""
+    if src.size == tgt.size:
+        return Confidence.EXACT
+
+    matches = 0
+    checks = 0
+
+    if src.exif_date and tgt.exif_date:
+        checks += 1
+        if src.exif_date == tgt.exif_date:
+            matches += 1
+
+    if src.width and tgt.width and src.height and tgt.height:
+        checks += 1
+        if src.width == tgt.width and src.height == tgt.height:
+            matches += 1
+
+    if src.framerate and tgt.framerate:
+        checks += 1
+        if abs(src.framerate - tgt.framerate) < 0.1:
+            matches += 1
+
+    if checks == 0:
+        return Confidence.AMBIGUOUS
+    if matches == checks:
+        return Confidence.LIKELY
+    if matches > 0:
+        return Confidence.AMBIGUOUS
+    return Confidence.AMBIGUOUS
+
+
+def coverage_check(
+    source_path: Path,
+    target_path: Path,
+    source_label: str = "source",
+    target_label: str = "target",
+) -> CoverageResult:
+    """Check whether every file in *source_path* exists somewhere in *target_path*."""
+    source_files = scan_directory(source_path, label=source_label)
+    target_files = scan_directory(target_path, label=target_label)
+    target_index = build_flat_index(target_files)
+
+    result = CoverageResult()
+
+    for src in source_files:
+        key = src.name.lower()
+        candidates = target_index.get(key, [])
+
+        exact = [c for c in candidates if c.size == src.size]
+        if exact:
+            result.matched.append(
+                MatchResult(src, exact[0], Confidence.EXACT)
+            )
+            continue
+
+        if candidates:
+            best = candidates[0]
+            conf = _metadata_match(src, best)
+            if conf in (Confidence.LIKELY, Confidence.AMBIGUOUS):
+                result.matched.append(MatchResult(src, best, conf))
+                continue
+
+        result.missing.append(MatchResult(src))
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# safe-to-clear
+# ---------------------------------------------------------------------------
+
+def safe_to_clear(
+    laptop_path: Path,
+    ssd_path: Path,
+    hdd_path: Path,
+    laptop_label: str = "laptop",
+) -> SafeToClearResult:
+    """Check if all files in *laptop_path* exist on both SSD and HDD."""
+    laptop_files = scan_directory(laptop_path, label=laptop_label)
+
+    ssd_files = scan_directory(ssd_path, label="SSD")
+    ssd_index = build_flat_index(ssd_files)
+
+    hdd_files = scan_directory(hdd_path, label="HDD")
+    hdd_index = build_flat_index(hdd_files)
+
+    def _check(index: Dict[str, List[MediaFile]]) -> CoverageResult:
+        cov = CoverageResult()
+        for src in laptop_files:
+            key = src.name.lower()
+            candidates = index.get(key, [])
+            exact = [c for c in candidates if c.size == src.size]
+            if exact:
+                cov.matched.append(MatchResult(src, exact[0], Confidence.EXACT))
+            elif candidates:
+                best = candidates[0]
+                conf = _metadata_match(src, best)
+                if conf in (Confidence.LIKELY, Confidence.AMBIGUOUS):
+                    cov.matched.append(MatchResult(src, best, conf))
+                else:
+                    cov.missing.append(MatchResult(src))
+            else:
+                cov.missing.append(MatchResult(src))
+        return cov
+
+    return SafeToClearResult(
+        ssd_coverage=_check(ssd_index),
+        hdd_coverage=_check(hdd_index),
+    )
+
+
+# ---------------------------------------------------------------------------
+# duplicates
+# ---------------------------------------------------------------------------
+
+def find_duplicates(path: Path, label: str = "dir") -> List[DuplicateGroup]:
+    """Find files with identical name+size in different subdirectories."""
+    files = scan_directory(path, label=label)
+
+    buckets: Dict[Tuple[str, int], List[MediaFile]] = defaultdict(list)
+    for mf in files:
+        buckets[(mf.name.lower(), mf.size)].append(mf)
+
+    groups: List[DuplicateGroup] = []
+    for (name, size), members in sorted(buckets.items()):
+        if len(members) < 2:
+            continue
+        dirs = {str(mf.path.parent.relative_to(path)) for mf in members}
+        if len(dirs) < 2:
+            continue
+        groups.append(DuplicateGroup(
+            name=members[0].name,
+            size=size,
+            paths=[mf.rel_path for mf in members],
+        ))
+
+    return groups
+
+
+# ---------------------------------------------------------------------------
+# timeline-gaps
+# ---------------------------------------------------------------------------
+
+def timeline_gaps(
+    path: Path,
+    label: str = "dir",
+    min_gap_days: int = 7,
+) -> Tuple[List[TimelineGap], Optional[datetime], Optional[datetime]]:
+    """Find date gaps across all media in *path* (flattened, all subdirs).
+
+    Returns (gaps, earliest_date, latest_date).
+    """
+    files = scan_directory(path, read_metadata=True, label=label)
+
+    dates: List[datetime] = []
+    for mf in files:
+        if mf.exif_date:
+            dates.append(mf.exif_date)
+
+    if not dates:
+        return [], None, None
+
+    dates.sort()
+    earliest = dates[0]
+    latest = dates[-1]
+    threshold = timedelta(days=min_gap_days)
+
+    gaps: List[TimelineGap] = []
+    prev = dates[0]
+    for d in dates[1:]:
+        if d - prev > threshold:
+            gaps.append(TimelineGap(start=prev, end=d))
+        prev = d
+
+    return gaps, earliest, latest
