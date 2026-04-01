@@ -30,5 +30,5 @@ Thumbs.db
 .coverage
 htmlcov/
 
-# Poetry
-poetry.lock
+# Poetry - lock file is intentionally committed
+# poetry.lock
