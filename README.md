@@ -8,7 +8,7 @@ are ever deleted or modified.**
 ## Installation
 
 ```bash
-git clone https://github.com/kamil-dlugosz-affirm/media-backup.git
+git clone https://github.com/kamil-dlugosz/media-backup.git
 cd media-backup
 poetry install
 poetry shell
