@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Interactive tool for verifying media backup consistency across phones, laptop, and external drives"
 authors = ["Kamil Dlugosz"]
 readme = "README.md"
-packages = [{include = "media_backup"}]
+package-mode = false
 
 [tool.poetry.scripts]
 media-backup = "media_backup.__main__:main"
