@@ -11,15 +11,14 @@ are ever deleted or modified.**
 git clone https://github.com/kamil-dlugosz/media-backup.git
 cd media-backup
 poetry install
-poetry shell
 ```
 
 To launch:
 
 ```bash
-media-backup
+poetry run media-backup
 # or
-python -m media_backup
+poetry run python -m media_backup
 ```
 
 ## Quick Start
